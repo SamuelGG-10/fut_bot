@@ -171,8 +171,7 @@ async def cmd_equipo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = analisis.texto_equipo(team_name, s)
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-    msg = analisis.texto_equipo(team_name, s)
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    
 
 
 async def cmd_liga(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
