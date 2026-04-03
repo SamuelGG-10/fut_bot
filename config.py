@@ -1,8 +1,9 @@
 import os
 
-TELEGRAM_TOKEN     = "8603220738:AAHr5MOwEnuAoLReyf4csYTrwQfGzmZ_aLM"
-FOOTBALL_API_TOKEN = "796def20f1f74a319f29d0e48d1955b9"
-ODDS_API_TOKEN      = "f31d30b339c3424bb93daefdfa3b430c"
+TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_TOKEN", "8603220738:AAHr5MOwEnuAoLReyf4csYTrwQfGzmZ_aLM")
+FOOTBALL_API_TOKEN = os.environ.get("FOOTBALL_API_TOKEN", "796def20f1f74a319f29d0e48d1955b9")
+ODDS_API_TOKEN     = os.environ.get("ODDS_API_TOKEN", "f31d30b339c3424bb93daefdfa3b430c")
+
 LIGAS = {
     "Premier League": "PL",
     "La Liga":        "PD",
@@ -19,7 +20,7 @@ ODDS_LIGAS = {
     "CL":  "soccer_uefa_champions_league",
 }
 
-UMBRAL_BTTS      = 65
-UMBRAL_OVER25    = 60
-UMBRAL_PARTIDOS  = 10  
-VENTAJA_MODELO   = 5 
+UMBRAL_BTTS     = 65
+UMBRAL_OVER25   = 60
+UMBRAL_PARTIDOS = 10
+VENTAJA_MODELO  = 5
