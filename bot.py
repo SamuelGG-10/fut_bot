@@ -306,7 +306,7 @@ async def job_alertas_diarias(ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             log.warning(f"Error enviando a {chat_id}: {e}")
 
-    async def cmd_actualizar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_actualizar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Actualiza manualmente el historial de los últimos 7 días."""
     await update.message.reply_text("⏳ Actualizando historial de partidos...")
     
