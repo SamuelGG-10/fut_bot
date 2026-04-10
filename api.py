@@ -198,3 +198,27 @@ def cargar_historial_equipo(team_id, n=20):
     y los devuelve listos para guardar en DB.
     """
     return ultimos_partidos(team_id, n)
+
+def partidos_recientes(dias=3):
+    """
+    Trae todos los partidos terminados de los últimos N días
+    de todas las ligas configuradas.
+    """
+    from config import LIGAS
+    from datetime import datetime, timedelta
+    
+    fecha_desde = (datetime.utcnow() - timedelta(days=dias)).strftime("%Y-%m-%d")
+    fecha_hasta = datetime.utcnow().strftime("%Y-%m-%d")
+    
+    todos = []
+    for code in LIGAS.values():
+        try:
+            data = get(f"competitions/{code}/matches", params={
+                "status":   "FINISHED",
+                "dateFrom": fecha_desde,
+                "dateTo":   fecha_hasta
+            })
+            todos.extend(data.get("matches", []))
+        except Exception as e:
+            log.warning(f"Error jalando partidos de {code}: {e}")
+    return todos

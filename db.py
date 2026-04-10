@@ -117,3 +117,24 @@ def eliminar_suscriptor(chat_id):
     con.execute("DELETE FROM suscriptores WHERE chat_id = ?", (chat_id,))
     con.commit()
     con.close()
+
+def actualizar_resultado(partido_id, goles_home, goles_away, status):
+    """Actualiza el resultado de un partido ya guardado."""
+    con = sqlite3.connect(DB)
+    con.execute("""
+        UPDATE partidos
+        SET goles_home = ?, goles_away = ?, status = ?
+        WHERE id = ?
+    """, (goles_home, goles_away, status, partido_id))
+    con.commit()
+    con.close()
+
+
+def partido_existe(partido_id):
+    """Verifica si un partido ya está en la base de datos."""
+    con = sqlite3.connect(DB)
+    cur = con.cursor()
+    cur.execute("SELECT id FROM partidos WHERE id = ?", (partido_id,))
+    existe = cur.fetchone() is not None
+    con.close()
+    return existe

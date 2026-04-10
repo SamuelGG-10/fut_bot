@@ -244,7 +244,38 @@ async def cmd_cargar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def job_actualizar_datos(ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Corre cada noche a las 02:00 UTC.
+    Actualiza resultados de los últimos 3 días en la DB.
+    """
+    log.info("Actualizando historial de partidos...")
+    
+    partidos = api.partidos_recientes(dias=3)
+    actualizados = nuevos = 0
+    
+    for p in partidos:
+        try:
+            gh = p["score"]["fullTime"].get("home")
+            ga = p["score"]["fullTime"].get("away")
+            
+            if db.partido_existe(p["id"]):
+                db.actualizar_resultado(p["id"], gh, ga, p["status"])
+                actualizados += 1
+            else:
+                db.guardar_partido(p)
+                nuevos += 1
+        except Exception as e:
+            log.warning(f"Error actualizando partido {p.get('id')}: {e}")
+    
+    log.info(f"Actualización: {nuevos} nuevos, {actualizados} actualizados")
+
+
 async def job_alertas_diarias(ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Corre cada día a las 08:00 UTC.
+    Envía alertas de partidos del día a todos los suscriptores.
+    """
     log.info("Ejecutando alertas diarias...")
     partidos     = api.partidos_hoy()
     suscriptores = db.get_suscriptores()
@@ -275,6 +306,34 @@ async def job_alertas_diarias(ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             log.warning(f"Error enviando a {chat_id}: {e}")
 
+    async def cmd_actualizar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Actualiza manualmente el historial de los últimos 7 días."""
+    await update.message.reply_text("⏳ Actualizando historial de partidos...")
+    
+    partidos = api.partidos_recientes(dias=7)
+    actualizados = nuevos = 0
+    
+    for p in partidos:
+        try:
+            gh = p["score"]["fullTime"].get("home")
+            ga = p["score"]["fullTime"].get("away")
+            
+            if db.partido_existe(p["id"]):
+                db.actualizar_resultado(p["id"], gh, ga, p["status"])
+                actualizados += 1
+            else:
+                db.guardar_partido(p)
+                nuevos += 1
+        except Exception as e:
+            continue
+    
+    await update.message.reply_text(
+        f"✅ *Historial actualizado*\n"
+        f"  Partidos nuevos: {nuevos}\n"
+        f"  Resultados actualizados: {actualizados}",
+        parse_mode="Markdown"
+    )
+
 
 def main():
     db.init_db()
@@ -287,11 +346,12 @@ def main():
     app.add_handler(CommandHandler("liga",   cmd_liga))
     app.add_handler(CommandHandler("equipo", cmd_equipo))
     app.add_handler(CommandHandler("cargar", cmd_cargar))
+    app.add_handler(CommandHandler("actualizar", cmd_actualizar))
 
     app.job_queue.run_daily(
-        job_alertas_diarias,
-        time=time(hour=8, minute=0, tzinfo=timezone.utc),
-        name="alertas_diarias"
+        job_actualizar_datos,
+        time=time(hour=2, minute=0, tzinfo=timezone.utc),
+        name="actualizar_datos"
     )
 
     log.info("Bot iniciado.")
