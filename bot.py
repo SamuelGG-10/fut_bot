@@ -16,22 +16,18 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def formato_partido(p, rec):
+def formato_partido(p, rec, stake=STAKE_DEFAULT):
     home = p["homeTeam"]["name"]
     away = p["awayTeam"]["name"]
     hora = p["utcDate"][11:16]
     liga = p["competition"]["name"]
 
-    if not rec:
+    if not rec or not rec["jugadas"]:
         return None
 
-    sh = rec["sh"]
-    sa = rec["sa"]
     probs = rec["probs"]
-
-    # Solo enviar si hay alertas o ventajas de valor
-    if not rec["alertas"] and not rec["ventajas"]:
-        return None
+    sh    = rec["sh"]
+    sa    = rec["sa"]
 
     lineas = [
         f"🏆 *{liga}*",
@@ -42,18 +38,16 @@ def formato_partido(p, rec):
         analisis.texto_equipo(away, sa),
         f"",
         f"📊 *Probabilidades del modelo:*",
-        f"  Local {probs['home']}%  |  Empate {probs['draw']}%  |  Visit {probs['away']}%",
+        f"  Local {probs['home']*100:.1f}%  |  Empate {probs['draw']*100:.1f}%  |  Visit {probs['away']*100:.1f}%",
+        f"",
+        f"━━━━━━━━━━━━━━━━━━━━",
     ]
 
-    if rec["alertas"]:
-        lineas.append(f"\n🔔 *Jugadas detectadas:*")
-        lineas += [f"  {a}" for a in rec["alertas"]]
+    for j in rec["jugadas"]:
+        lineas.append("")
+        lineas.append(analisis.formatear_jugada(j, stake))
+        lineas.append("─────────────────────")
 
-    if rec["ventajas"]:
-        lineas.append(f"\n💰 *Valor vs mercado:*")
-        lineas += [f"  {v}" for v in rec["ventajas"]]
-
-    lineas.append("━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lineas)
 
 
