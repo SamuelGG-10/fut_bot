@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import api
 import db
 import analisis
-from config import TELEGRAM_TOKEN, LIGAS, UMBRAL_PARTIDOS
+from config import TELEGRAM_TOKEN, LIGAS, UMBRAL_PARTIDOS, STAKE_DEFAULT
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -77,28 +77,31 @@ async def cmd_hoy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No hay partidos programados hoy.")
         return
 
-    # Obtener cuotas por liga
+    # Cuotas por liga
     cuotas_por_liga = {}
-    ligas_hoy = set(p["competition"]["code"] for p in partidos if p.get("competition", {}).get("code"))
+    ligas_hoy = set(
+        p["competition"]["code"]
+        for p in partidos
+        if p.get("competition", {}).get("code")
+    )
     for code in ligas_hoy:
         cuotas_por_liga[code] = api.get_cuotas(code)
 
     enviados = 0
     for p in partidos:
         db.guardar_partido(p)
-        code   = p.get("competition", {}).get("code", "")
-        cuotas = cuotas_por_liga.get(code, {})
+        code  = p.get("competition", {}).get("code", "")
+        todas = cuotas_por_liga.get(code, {})
 
-        # Buscar cuota de este partido específico
-        cuota_partido = cuotas.get(
-            (p["homeTeam"]["name"], p["awayTeam"]["name"]),
-            None
+        # Buscar cuotas específicas de este partido
+        cuota_partido = todas.get(
+            (p["homeTeam"]["name"], p["awayTeam"]["name"]), {}
         )
 
         rec = analisis.generar_recomendacion(
             p["homeTeam"]["id"], p["awayTeam"]["id"],
             p["homeTeam"]["name"], p["awayTeam"]["name"],
-            cuota_partido
+            cuotas=cuota_partido
         )
         msg = formato_partido(p, rec)
         if msg:
@@ -106,7 +109,7 @@ async def cmd_hoy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             enviados += 1
 
     if enviados == 0:
-        await update.message.reply_text("📭 Sin jugadas con alto porcentaje para hoy.")
+        await update.message.reply_text("📭 Sin jugadas con valor para hoy.")
 
 
 async def cmd_equipo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -328,6 +331,129 @@ async def cmd_actualizar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# En bot.py — agrega este comando
+async def cmd_cuotas(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Uso: /cuotas Liverpool Chelsea btts:1.72 over_2_5:1.67 home_win:2.10 draw:3.40 away_win:3.20
+    """
+    if not ctx.args or len(ctx.args) < 3:
+        await update.message.reply_text(
+            "Uso:\n`/cuotas <local> vs <visitante> btts:1.72 over_2_5:1.67 home_win:2.10`\n\n"
+            "Mercados disponibles:\n"
+            "`btts` `over_1_5` `over_2_5` `over_3_5` `home_win` `draw` `away_win`",
+            parse_mode="Markdown"
+        )
+        return
+
+    texto = " ".join(ctx.args)
+
+    # Separar equipos de cuotas
+    cuotas = {}
+    equipos_partes = []
+    for parte in ctx.args:
+        if ":" in parte:
+            key, val = parte.split(":", 1)
+            try:
+                cuotas[key.lower()] = float(val)
+            except ValueError:
+                pass
+        else:
+            equipos_partes.append(parte)
+
+    nombre_partido = " ".join(equipos_partes)
+    await update.message.reply_text(
+        f"⏳ Analizando *{nombre_partido}* con cuotas de Wplay...",
+        parse_mode="Markdown"
+    )
+
+    # Buscar los dos equipos
+    partes = nombre_partido.lower().split(" vs ")
+    if len(partes) != 2:
+        await update.message.reply_text(
+            "Formato: `LocalTeam vs AwayTeam btts:1.72 ...`",
+            parse_mode="Markdown"
+        )
+        return
+
+    home_nombre = partes[0].strip()
+    away_nombre = partes[1].strip()
+
+    home_eq = api.buscar_equipo_global(home_nombre)
+    away_eq = api.buscar_equipo_global(away_nombre)
+
+    if not home_eq or not away_eq:
+        await update.message.reply_text("❌ No encontré uno o ambos equipos.")
+        return
+
+    rec = analisis.generar_recomendacion(
+        home_eq["id"], away_eq["id"],
+        home_eq["name"], away_eq["name"],
+        cuotas=cuotas
+    )
+
+    if not rec or not rec["jugadas"]:
+        await update.message.reply_text(
+            "📭 Ninguna jugada supera los filtros de valor con esas cuotas."
+        )
+        return
+
+    probs = rec["probs"]
+    lineas = [
+        f"🆚 *{home_eq['name']}* vs *{away_eq['name']}*",
+        f"📊 Modelo: Local {probs['home']*100:.1f}% | Empate {probs['draw']*100:.1f}% | Visit {probs['away']*100:.1f}%",
+        f"━━━━━━━━━━━━━━━━━━━━",
+    ]
+    for j in rec["jugadas"]:
+        lineas.append("")
+        lineas.append(analisis.formatear_jugada(j))
+        lineas.append("─────────────────────")
+
+    await update.message.reply_text("\n".join(lineas), parse_mode="Markdown")
+
+async def cmd_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Muestra el Top 5 picks del día según métricas internas."""
+    await update.message.reply_text("⏳ Analizando partidos del día...")
+
+    partidos = api.partidos_hoy()
+    if not partidos:
+        await update.message.reply_text("No hay partidos programados hoy.")
+        return
+
+    # Guardar partidos en DB
+    for p in partidos:
+        try:
+            db.guardar_partido(p)
+        except Exception:
+            pass
+
+    top = analisis.get_top_picks(partidos, top_n=5)
+
+    if not top:
+        await update.message.reply_text(
+            "📭 No hay picks válidos hoy según los filtros actuales.\n"
+            "Puede que falte historial — usa `/cargar PL` para cargar datos."
+        )
+        return
+
+    lineas = ["🔥 *TOP 5 PICKS DEL DÍA*\n"]
+
+    for i, pick in enumerate(top, 1):
+        estado_emoji = "🔵" if pick["estado"] == "Apta" else "🟢"
+        lineas.append(
+            f"{i}) *{pick['partido']}*\n"
+            f"   🏆 {pick['liga']} — {pick['hora']} UTC\n"
+            f"   📌 Mercado: {pick['mercado']}\n"
+            f"   🤖 Prob. bot: {pick['prob_bot']*100:.1f}%\n"
+            f"   📊 Soporte reciente: {pick['soporte']}\n"
+            f"   🧠 Score interno: {pick['score']}/10\n"
+            f"   {estado_emoji} Estado: {pick['estado']}\n"
+        )
+
+    lineas.append("━━━━━━━━━━━━━━━━━━━━")
+    lineas.append("_Picks basados en estadísticas recientes. No es asesoría financiera._")
+
+    await update.message.reply_text("\n".join(lineas), parse_mode="Markdown")
+
 
 def main():
     db.init_db()
@@ -341,6 +467,9 @@ def main():
     app.add_handler(CommandHandler("equipo", cmd_equipo))
     app.add_handler(CommandHandler("cargar", cmd_cargar))
     app.add_handler(CommandHandler("actualizar", cmd_actualizar))
+    app.add_handler(CommandHandler("cuotas", cmd_cuotas))
+    app.add_handler(CommandHandler("top", cmd_top))
+
 
     app.job_queue.run_daily(
         job_actualizar_datos,
